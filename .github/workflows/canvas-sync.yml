@@ -1,0 +1,63 @@
+name: Canvas to Outlook calendar sync
+
+on:
+  schedule:
+    # 12:00 UTC daily. During EDT (roughly mid-March to early November) that's
+    # 8:00 AM America/New_York; during EST the rest of the year it's 7:00 AM.
+    # GitHub Actions cron has no timezone support, and a 1-hour drift twice a
+    # year is harmless here -- reminders' own times are computed correctly via
+    # zoneinfo regardless of what time this job happens to run. See README.
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deployment at a time; don't cancel one that's in flight.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Generate reminders.ics
+        env:
+          CANVAS_BASE_URL: ${{ secrets.CANVAS_BASE_URL }}
+          CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
+        run: python -m src.canvas_sync
+
+      - name: Prepare Pages artifact
+        run: |
+          mkdir -p _site
+          cp reminders.ics _site/reminders.ics
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
