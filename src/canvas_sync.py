@@ -1,6 +1,7 @@
 """Daily entrypoint: Canvas -> parse -> reminders.ics (regenerated from scratch each run)."""
 import sys
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 # Windows consoles often default to cp1252, which can't print the emoji used
 # in reminder subjects; force UTF-8 for stdout so logging never crashes.
@@ -9,6 +10,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 from src.canvas_client import CanvasClient
 from src.config import Config
+from src.email_digest import build_digest_email, send_email
 from src.ics_builder import build_assignment_event, build_case_event, build_calendar
 from src.parser import parse_assignments, parse_calendar_case_events
 
@@ -67,6 +69,22 @@ def main():
 
     print(f"Generated {len(events_by_uid)} reminder event(s)")
     print(f"Wrote {cfg.ics_output_path}")
+
+    digest_horizon = now_utc + timedelta(days=cfg.digest_window_days)
+    digest_items = [a for a in assignments if now_utc <= a.due_at <= digest_horizon]
+
+    tomorrow_local = (now_utc.astimezone(ZoneInfo(cfg.timezone)) + timedelta(days=1)).date()
+    cases_tomorrow = [c for c in cases if c.class_date.astimezone(ZoneInfo(cfg.timezone)).date() == tomorrow_local]
+
+    subject, body = build_digest_email(digest_items, cfg.digest_window_days, cfg.timezone, cases_tomorrow)
+    print(f"Digest: {len(digest_items)} deadline(s) due in the next {cfg.digest_window_days} days, "
+          f"{len(cases_tomorrow)} case(s) due tomorrow")
+
+    if not cfg.smtp_username:
+        print("SMTP not configured (SMTP_USERNAME unset) -- skipping digest email")
+    else:
+        send_email(cfg.smtp_host, cfg.smtp_port, cfg.smtp_username, cfg.smtp_password, cfg.email_from, cfg.email_to, subject, body)
+        print(f"Sent digest email to {cfg.email_to}")
 
 
 if __name__ == "__main__":

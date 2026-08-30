@@ -7,6 +7,8 @@ flow, client secret, or Graph OAuth token required anywhere in this.
 
 - Assignment due tomorrow -> reminder at 9:00-9:15 AM the day before
 - Class session tomorrow -> case-prep reminder at 6:00-6:15 PM the evening before
+- A daily digest **email** listing all deadlines/exams due in the next 14
+  days, plus any case prep due tomorrow
 - The feed is regenerated from scratch daily via GitHub Actions and published
   via GitHub Pages; Outlook re-polls that URL on its own schedule, so
   assignment changes, new cases, and date shifts show up automatically
@@ -69,8 +71,41 @@ Actions, add:
 |---|---|
 | `CANVAS_BASE_URL` | your Canvas instance URL |
 | `CANVAS_TOKEN` | the token from step 1 |
+| `SMTP_HOST` | e.g. `smtp.gmail.com` |
+| `SMTP_PORT` | e.g. `587` |
+| `SMTP_USERNAME` | the sending account's address |
+| `SMTP_PASSWORD` | an **app password** for that account -- never its real login password |
+| `EMAIL_FROM` | usually the same as `SMTP_USERNAME` |
+| `EMAIL_TO` | where you actually want the digest delivered |
 
-Nothing else is needed -- no client ID, no tenant ID, no OAuth anything.
+No Azure client ID, tenant ID, or OAuth of any kind is needed for any of
+this. See "Setting up the digest email sender" below for why the sending
+account likely can't be your school email directly.
+
+### Setting up the digest email sender
+
+Any real email account needs a credential to prove you're authorized to
+send as it -- there's no credential-free way to send mail (that's exactly
+what stops spam). For a personal Gmail (or Google Workspace) account:
+
+1. The sending account needs **2-Step Verification** turned on
+   (myaccount.google.com -> Security). App Passwords only appear once this
+   is enabled.
+2. Go to **myaccount.google.com/apppasswords**, name one (e.g.
+   `canvas-sync`), and copy the 16-character password it generates.
+3. Use that as `SMTP_PASSWORD` -- **never your real account password**.
+   An app password is scoped to this one purpose and independently
+   revocable if it's ever exposed.
+
+Institutional (school/work) Microsoft/Google accounts often block this
+entirely -- confirmed blocked for this project's own HBS account (no SMTP
+connector access via Power Automate, no app-password option visible on
+the account) and for a personal outlook.com account (no app-password
+option offered at all). If your sending account doesn't offer an App
+Password option, the sender doesn't have to be the same account you want
+the digest delivered to -- `EMAIL_FROM`/`SMTP_USERNAME` and `EMAIL_TO` can
+be entirely different accounts, so a secondary Gmail used purely as a
+sending relay works fine, delivering to your real inbox via `EMAIL_TO`.
 
 ### 4. Enable GitHub Pages
 
@@ -179,6 +214,17 @@ GitHub repo**
 The Pages URL is tied to the repo name; renaming the repo changes the URL.
 Re-subscribe in Outlook with the new URL if this happens.
 
+**"SMTP not configured (SMTP_USERNAME unset) -- skipping digest email"**
+This is expected, not an error, until you've added the SMTP secrets from
+step 3 -- the `.ics` calendar side works independently of the email digest.
+
+**Digest email fails with an authentication error**
+Almost always means `SMTP_PASSWORD` is a real account password instead of
+an app password, or the sending account doesn't have App Passwords enabled
+at all (common for institutional accounts). Use
+`scripts/send_test_email.py` locally to iterate on this without waiting for
+the full daily workflow.
+
 ## Project layout
 
 ```
@@ -186,13 +232,17 @@ src/
   config.py         env-var driven settings
   canvas_client.py  Canvas REST calls (read-only, with 401/rate-limit handling)
   parser.py         raw Canvas JSON -> AssignmentReminder / CaseReminder
-  ics_builder.py     builds the .ics VEVENTs with stable UIDs and DST-safe UTC times
+  ics_builder.py    builds the .ics VEVENTs with stable UIDs and DST-safe UTC times
+  email_digest.py   builds and sends the daily "upcoming deadlines" digest email
   canvas_sync.py    daily entrypoint, wires everything together
+scripts/
+  send_test_email.py   one-off local SMTP connectivity/credential test
 tests/
   test_parser.py       classification and extraction logic, mocked Canvas data
   test_ics_builder.py  reminder timing, UID stability, DST, dedup
+  test_email_digest.py digest email content, mocked data (no real send)
 .github/workflows/
-  canvas-sync.yml   daily cron -> generate -> publish to GitHub Pages
+  canvas-sync.yml   daily cron -> generate .ics + send digest -> publish to GitHub Pages
 ```
 
 ## Optional: LLM-assisted summaries

@@ -28,5 +28,19 @@ class Config:
         self.case_reminder_hour = int(os.environ.get("CASE_REMINDER_HOUR", "18"))
         self.reminder_duration_minutes = int(os.environ.get("REMINDER_DURATION_MINUTES", "15"))
 
+        # Daily "upcoming deadlines" digest email: assignments/exams due within
+        # the next N days, sent once per run.
+        self.digest_window_days = int(os.environ.get("DIGEST_WINDOW_DAYS", "14"))
+
         # IANA timezone name used to resolve reminder wall-clock times before converting to UTC.
         self.timezone = os.environ.get("REMINDER_TIMEZONE", "America/New_York")
+
+        # SMTP settings for the digest email. Optional -- if SMTP_USERNAME isn't
+        # set, the digest email is skipped (logged, not an error) so the .ics
+        # side of this project keeps working standalone while email is being set up.
+        self.smtp_host = os.environ.get("SMTP_HOST", "")
+        self.smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        self.smtp_username = os.environ.get("SMTP_USERNAME", "")
+        self.smtp_password = os.environ.get("SMTP_PASSWORD", "")
+        self.email_from = os.environ.get("EMAIL_FROM") or self.smtp_username
+        self.email_to = os.environ.get("EMAIL_TO") or self.smtp_username
