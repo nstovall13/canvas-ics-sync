@@ -9,13 +9,24 @@ class CanvasClient:
     def __init__(self, base_url: str, token: str):
         self.base_url = base_url
         self._session = requests.Session()
-        self._session.headers.update({"Authorization": f"Bearer {token}"})
+        self._session.headers.update({
+            "Authorization": f"Bearer {token}",
+            # Some hosts' bot-protection layers flag the generic "python-requests/x.x"
+            # default User-Agent, especially from well-known shared CI IP ranges
+            # (confirmed: this exact request succeeds from a residential IP but got a
+            # 406 from GitHub Actions' runners). Identifying as a real client helps.
+            "User-Agent": "canvas-ics-sync/1.0 (+https://github.com/nstovall13/canvas-ics-sync)",
+            "Accept": "application/json",
+        })
 
-    def _request(self, url: str, params: dict | None = None) -> requests.Response:
+    def _get_once(self, url: str, params: dict | None) -> requests.Response:
         try:
-            resp = self._session.get(url, params=params, timeout=30)
+            return self._session.get(url, params=params, timeout=30)
         except requests.exceptions.RequestException as exc:
             raise RuntimeError(f"Network error calling Canvas API ({url}): {exc}") from exc
+
+    def _request(self, url: str, params: dict | None = None) -> requests.Response:
+        resp = self._get_once(url, params)
 
         if resp.status_code == 401:
             raise RuntimeError(
@@ -26,12 +37,24 @@ class CanvasClient:
 
         if resp.status_code == 403 and "rate limit" in resp.text.lower():
             time.sleep(5)
-            try:
-                resp = self._session.get(url, params=params, timeout=30)
-            except requests.exceptions.RequestException as exc:
-                raise RuntimeError(f"Network error calling Canvas API ({url}): {exc}") from exc
+            resp = self._get_once(url, params)
             if resp.status_code == 403:
                 raise RuntimeError("Canvas API rate limit exceeded even after retrying. Try again later.")
+
+        if resp.status_code == 406:
+            # Seen intermittently, likely a transient bot-protection challenge rather
+            # than a real per-request problem -- one retry after a short pause clears
+            # it in practice.
+            time.sleep(5)
+            resp = self._get_once(url, params)
+            if resp.status_code == 406:
+                raise RuntimeError(
+                    "Canvas API returned 406 Not Acceptable even after retrying -- this "
+                    "looks like host-side bot protection rejecting the request rather "
+                    "than a problem with CANVAS_TOKEN or the request itself. Try again "
+                    "later; if it persists, it may need Canvas/IT to allowlist the "
+                    "request source."
+                )
 
         resp.raise_for_status()
         return resp
