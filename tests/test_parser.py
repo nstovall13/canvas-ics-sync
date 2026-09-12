@@ -7,7 +7,7 @@ from src.parser import (
 COURSES_BY_ID = {101: {"id": 101, "course_code": "FIN1-H"}}
 
 
-def make_assignment(id, name, due_at, submission_types=None, description=None):
+def make_assignment(id, name, due_at, submission_types=None, description=None, submission=None):
     return {
         "id": id,
         "name": name,
@@ -15,6 +15,7 @@ def make_assignment(id, name, due_at, submission_types=None, description=None):
         "submission_types": submission_types or ["none"],
         "description": description,
         "html_url": f"https://example.instructure.com/courses/1/assignments/{id}",
+        "submission": submission,
     }
 
 
@@ -51,6 +52,54 @@ def test_informational_only_entry_is_skipped():
     items, cases = parse_assignments(COURSES_BY_ID, assignments)
     assert items == []
     assert cases == []
+
+
+def test_already_submitted_assignment_is_excluded():
+    a = make_assignment(
+        20, "FIN1 | Poll | X", "2026-09-15T19:33:00Z",
+        submission_types=["online_quiz"],
+        submission={"workflow_state": "submitted", "submitted_at": "2026-09-14T10:00:00Z"},
+    )
+    items, _ = parse_assignments(COURSES_BY_ID, {101: [a]})
+    assert items == []
+
+
+def test_graded_submission_is_also_excluded():
+    a = make_assignment(
+        21, "FIN1 | Poll | X", "2026-09-15T19:33:00Z",
+        submission_types=["online_quiz"],
+        submission={"workflow_state": "graded"},
+    )
+    items, _ = parse_assignments(COURSES_BY_ID, {101: [a]})
+    assert items == []
+
+
+def test_pending_review_submission_is_also_excluded():
+    a = make_assignment(
+        22, "FIN1 | Poll | X", "2026-09-15T19:33:00Z",
+        submission_types=["online_quiz"],
+        submission={"workflow_state": "pending_review"},
+    )
+    items, _ = parse_assignments(COURSES_BY_ID, {101: [a]})
+    assert items == []
+
+
+def test_unsubmitted_assignment_is_kept():
+    a = make_assignment(
+        23, "FIN1 | Poll | X", "2026-09-15T19:33:00Z",
+        submission_types=["online_quiz"],
+        submission={"workflow_state": "unsubmitted"},
+    )
+    items, _ = parse_assignments(COURSES_BY_ID, {101: [a]})
+    assert len(items) == 1
+
+
+def test_missing_submission_object_is_kept():
+    # No "submission" key at all (e.g. include[]=submission wasn't honored) --
+    # default to treating it as outstanding rather than silently dropping it.
+    a = make_assignment(24, "FIN1 | Poll | X", "2026-09-15T19:33:00Z", submission_types=["online_quiz"])
+    items, _ = parse_assignments(COURSES_BY_ID, {101: [a]})
+    assert len(items) == 1
 
 
 def test_missing_due_at_is_skipped():

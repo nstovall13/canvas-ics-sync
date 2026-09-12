@@ -16,9 +16,12 @@ Two independent sources feed into "case-prep" items, per the spec:
    calendar events -- see parse_calendar_case_events().
 
 Anything else with a real submission type (not "none"/"not_graded") is a
-graded deliverable -> due-date reminder. Purely informational assignment
-entries (e.g. orientation schedule items) have no submission type and are
-skipped entirely.
+graded deliverable -> due-date reminder, *unless* the user has already
+submitted it (submission.workflow_state is "submitted", "graded", or
+"pending_review") -- in which case it's dropped entirely, from both the
+calendar reminder and the digest email, since there's nothing left to do.
+Purely informational assignment entries (e.g. orientation schedule items)
+have no submission type and are skipped entirely regardless.
 """
 import html
 import re
@@ -41,6 +44,16 @@ CLASS_TITLE_PATTERN = re.compile(r"\|\s*class\s*\d+\s*[:|]\s*(.+)$", re.IGNORECA
 CASE_LINE_PATTERN = re.compile(r"case:\s*([^\n]{1,150})", re.IGNORECASE)
 
 NON_DELIVERABLE_SUBMISSION_TYPES = {"none", "not_graded"}
+
+# submission.workflow_state values meaning "you've already done your part" --
+# anything else (typically "unsubmitted", or no submission object at all) means
+# it's still outstanding and worth reminding about.
+ALREADY_SUBMITTED_STATES = {"submitted", "graded", "pending_review"}
+
+
+def _already_submitted(assignment: dict) -> bool:
+    submission = assignment.get("submission") or {}
+    return submission.get("workflow_state") in ALREADY_SUBMITTED_STATES
 
 
 def clean_html(text: Optional[str]) -> str:
@@ -136,6 +149,9 @@ def parse_assignments(
             submission_types = set(a.get("submission_types") or [])
             if submission_types <= NON_DELIVERABLE_SUBMISSION_TYPES:
                 continue  # informational-only entry (e.g. orientation schedule item)
+
+            if _already_submitted(a):
+                continue  # already turned in -- no need to keep reminding about it
 
             assignments.append(
                 AssignmentReminder(

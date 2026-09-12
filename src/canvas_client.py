@@ -79,7 +79,10 @@ class CanvasClient:
     def get_assignments(self, course_id: int) -> list[dict]:
         return self._get_paginated(
             f"/api/v1/courses/{course_id}/assignments",
-            params={"per_page": 100, "order_by": "due_at"},
+            # include[]=submission embeds the current user's own submission status
+            # (workflow_state, submitted_at) on each assignment -- used to skip
+            # reminding about things already turned in.
+            params={"per_page": 100, "order_by": "due_at", "include[]": "submission"},
         )
 
     def get_calendar_events(self, course_ids) -> list[dict]:

@@ -27,7 +27,10 @@ as an "assignment" named like `"FRC | Class 2: Mira's Microbrewery Inc. (Part 1)
   right after the course code marks a class session -> case-prep reminder,
   using the text after that marker as the title. Anything else with a real
   submission type (not `none`/`not_graded`) is a graded deliverable -> due-date
-  reminder. Anything else (no submission type) is skipped.
+  reminder -- *unless* you've already submitted it (Canvas's
+  `submission.workflow_state` is `submitted`, `graded`, or `pending_review`),
+  in which case it's dropped entirely, from both the calendar reminder and
+  the digest email. Anything else (no submission type) is skipped.
 - `parse_calendar_case_events()`: the original spec's approach, kept for
   portability to Canvas instances where class sessions genuinely are
   calendar events. Verified empty at HBS (that endpoint there only returns
